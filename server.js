@@ -18,7 +18,8 @@ if (!fs.existsSync(PUBLIC_DIR)) {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 }
 
-const CSV_FILE = path.join(__dirname, 'leads.csv');
+const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+const CSV_FILE = path.join(dataDir, 'leads.csv');
 
 app.use(express.json());
 
