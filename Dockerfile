@@ -1,11 +1,7 @@
-FROM  mcr.microsoft.com/playwright:v1.62.1-jammy
-
-WORKDIR /app
-
+FROM mcr.microsoft.com/playwright:v1.40.0-jammy
+WORKDIR /usr/src/app
 COPY package*.json ./
-RUN npm ci
-
+RUN npm install
 COPY . .
-
 EXPOSE 3000
 CMD ["node", "server.js"]

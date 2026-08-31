@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Scraper & Sales Pipeline Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563EB;
+            --primary-hover: #1D4ED8;
+            --bg-body: #F8FAFC;
+            --card-bg: #FFFFFF;
+            --text-dark: #0F172A;
+            --text-muted: #64748B;
+            --border-color: #E2E8F0;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --radius-lg: 14px;
+            --radius-md: 8px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-dark);
+            padding: 16px;
+            min-height: 100vh;
+        }
+
+        @media (min-width: 768px) {
+            body {
+                padding: 24px;
+            }
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text-dark);
+            letter-spacing: -0.5px;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            background: #EFF6FF;
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 20px;
+            border: 1px solid #DBEAFE;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+        }
+
+        /* Responsive Top Section Grid */
+        .top-dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+            align-items: start;
+            /* Prevents height stretching */
+        }
+
+        @media (min-width: 1024px) {
+            .top-dashboard-grid {
+                grid-template-columns: 1.4fr 1fr;
+            }
+        }
+
+        /* Scraper Card */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            padding: 16px 18px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        /* Adaptive Input Grid */
+        .search-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            outline: none;
+            background: #FFFFFF;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .search-action-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            height: 35px;
+        }
+
+        button.btn-primary {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            height: 38px;
+            width: 100%;
+        }
+
+        button.btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .progress-box {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #F1F5F9;
+            border-radius: var(--radius-md);
+            font-size: 11px;
+            color: var(--text-muted);
+            display: none;
+            font-family: monospace;
+        }
+
+        /* Compact Responsive Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 10px;
+            width: 100%;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            padding: 12px 14px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .metric-card span {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-card h2 {
+            font-size: 20px;
+            font-weight: 800;
+            margin-top: 4px;
+            color: var(--text-dark);
+        }
+
+        /* Controls Bar */
+        .controls-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .search-filter {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        @media (min-width: 640px) {
+            .search-filter {
+                width: auto;
+            }
+        }
+
+        /* Collapsible Lead Cards */
+        .lead-card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            padding: 14px 18px;
+            margin-bottom: 10px;
+            box-shadow: var(--shadow-sm);
+            transition: border-color 0.2s;
+        }
+
+        .lead-card:hover {
+            border-color: #CBD5E1;
+        }
+
+        .lead-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .lead-summary-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+
+        .lead-title-group h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .lead-category {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .lead-compact-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+
+        .actions-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-toggle-details {
+            background: #F1F5F9;
+            color: var(--text-dark);
+            border: 1px solid var(--border-color);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: background 0.2s;
+        }
+
+        .btn-toggle-details:hover {
+            background: #E2E8F0;
+        }
+
+        .btn-delete {
+            background: #FEE2E2;
+            color: var(--danger);
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .btn-delete:hover {
+            background: #FCA5A5;
+            color: #991B1B;
+        }
+
+        .tag-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .tag-danger {
+            background: #FEF2F2;
+            color: #DC2626;
+        }
+
+        .tag-warning {
+            background: #FFFBEB;
+            color: #D97706;
+        }
+
+        .tag-success {
+            background: #ECFDF5;
+            color: #059669;
+        }
+
+        /* Expanded Details Section */
+        .lead-details {
+            display: none;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .lead-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-bottom: 14px;
+            font-size: 12px;
+        }
+
+        @media (min-width: 768px) {
+            .lead-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .info-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            color: var(--text-dark);
+            font-weight: 500;
+            word-break: break-all;
+        }
+
+        /* Audit Box */
+        .audit-box {
+            background: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .audit-box h4 {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-dark);
+        }
+
+        .audit-issues {
+            list-style-type: disc;
+            padding-left: 18px;
+            font-size: 12px;
+            color: #334155;
+            margin-bottom: 8px;
+        }
+
+        .audit-issues li {
+            margin-bottom: 2px;
+        }
+
+        .services-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .service-pill {
+            background: #E0E7FF;
+            color: #3730A3;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Pitch Box */
+        .pitch-box {
+            background: #EFF6FF;
+            border: 1px dashed #93C5FD;
+            border-radius: var(--radius-md);
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .pitch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .pitch-header h4 {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1E40AF;
+        }
+
+        .btn-copy {
+            background: #DBEAFE;
+            color: #1E40AF;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .btn-copy:hover {
+            background: #BFDBFE;
+        }
+
+        .pitch-text {
+            font-size: 12px;
+            white-space: pre-wrap;
+            color: #1E293B;
+            line-height: 1.4;
+        }
+
+        /* Footer Actions */
+        .card-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 10px;
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-wa {
+            background: #10B981;
+            color: white;
+        }
+
+        .btn-wa:hover {
+            background: #059669;
+        }
+
+        .btn-mail {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-mail:hover {
+            background: var(--primary-hover);
+        }
+
+        .status-select {
+            width: auto;
+            padding: 5px 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div>
+            <h1>Lead Finder & Pipeline Dashboard</h1>
+            <p>Automated Google Maps Scraper, Website Auditor & Multi-Point Outreach Engine</p>
+        </div>
+        <!-- <div class="status-badge">
+            <span class="status-dot"></span> System Ready
+        </div> -->
+    </header>
+
+    <!-- Side-by-Side Compact Dashboard Grid -->
+    <div class="top-dashboard-grid">
+        <!-- Compact Search Card -->
+        <div class="card">
+            <div class="card-title">Launch Business Search & Website Audit</div>
+            <div class="search-grid">
+                <div class="form-group">
+                    <label>Business Type</label>
+                    <input type="text" id="businessType" placeholder="e.g. Dentists">
+                </div>
+                <div class="form-group">
+                    <label>Target Area</label>
+                    <input type="text" id="location" placeholder="e.g. Austin, TX">
+                </div>
+                <div class="form-group">
+                    <label>Max Leads</label>
+                    <input type="number" id="maxResults" value="10" min="1" max="50">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isNearMe" onchange="toggleLocationInput()"> Near Me
+                    </label>
+                </div>
+            </div>
+            <div class="search-action-row">
+                <button class="btn-primary" id="btnScrape" onclick="startScrape()">
+                    <span>Start Search</span>
+                </button>
+            </div>
+            <div class="progress-box" id="progressBox">Ready...</div>
+        </div>
+
+        <!-- Compact Metrics Grid -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <span>Total Leads</span>
+                <h2 id="metricTotal">0</h2>
+            </div>
+            <div class="metric-card">
+                <span>Contacted</span>
+                <h2 id="metricContacted">0</h2>
+            </div>
+            <div class="metric-card">
+                <span>Audits Needed</span>
+                <h2 id="metricOpportunities">0</h2>
+            </div>
+            <div class="metric-card">
+                <span>Conversion</span>
+                <h2 id="metricConversion">0%</h2>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Search & Controls -->
+    <div class="controls-bar">
+        <div class="search-filter">
+            <input type="text" id="filterSearch" placeholder="Search leads by name or category..."
+                oninput="renderLeads()">
+            <select id="filterStatus" class="status-select" onchange="renderLeads()">
+                <option value="All">All Statuses</option>
+                <option value="New">New</option>
+                <option value="Contacted">Contacted</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Closed">Closed</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Lead Cards List -->
+    <div id="leadsList"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let globalLeads = [];
+
+        function toggleLocationInput() {
+            const isNearMe = document.getElementById('isNearMe').checked;
+            const locInput = document.getElementById('location');
+            locInput.disabled = isNearMe;
+            if (isNearMe) locInput.value = '';
+        }
+
+        async function loadLeads() {
+            try {
+                const res = await fetch('/api/leads');
+                globalLeads = await res.json();
+                updateMetrics();
+                renderLeads();
+            } catch (err) {
+                console.error('Failed to load leads:', err);
+            }
+        }
+
+        function updateMetrics() {
+            const total = globalLeads.length;
+            const contacted = globalLeads.filter(l => l.status === 'Contacted').length;
+            const opportunities = globalLeads.filter(l => l.siteStatus && l.siteStatus !== 'Active Site').length;
+            const conversion = total > 0 ? ((contacted / total) * 100).toFixed(1) : 0;
+
+            document.getElementById('metricTotal').innerText = total;
+            document.getElementById('metricContacted').innerText = contacted;
+            document.getElementById('metricOpportunities').innerText = opportunities;
+            document.getElementById('metricConversion').innerText = `${conversion}%`;
+        }
+
+        function toggleLeadDetails(id) {
+            const detailsEl = document.getElementById(`details_${id}`);
+            const btnEl = document.getElementById(`toggle_btn_${id}`);
+            if (!detailsEl || !btnEl) return;
+
+            if (detailsEl.style.display === 'none' || !detailsEl.style.display) {
+                detailsEl.style.display = 'block';
+                btnEl.innerHTML = 'Less Details ▲';
+            } else {
+                detailsEl.style.display = 'none';
+                btnEl.innerHTML = 'More Details ▾';
+            }
+        }
+
+        function renderLeads() {
+            const container = document.getElementById('leadsList');
+            const searchQuery = document.getElementById('filterSearch').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value;
+
+            const filtered = globalLeads.filter(l => {
+                const matchesSearch = (l.shopName || '').toLowerCase().includes(searchQuery) ||
+                    (l.category || '').toLowerCase().includes(searchQuery);
+                const matchesStatus = statusFilter === 'All' || l.status === statusFilter;
+                return matchesSearch && matchesStatus;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="card" style="text-align:center; color:var(--text-muted); padding:30px;">No leads found. Launch a scrape above to generate leads!</div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(lead => {
+                const issues = lead.issues ? lead.issues.split(' | ') : [];
+                const services = lead.services ? lead.services.split('; ') : [];
+
+                let badgeClass = 'tag-warning';
+                if (lead.siteStatus === 'Missing Website' || lead.siteStatus === 'Inaccessible / Down') badgeClass = 'tag-danger';
+                if (lead.siteStatus === 'Active Site') badgeClass = 'tag-success';
+
+                return `
+                <div class="lead-card" id="card_${lead.id}">
+                    <!-- Compact Bar (Always Visible) -->
+                    <div class="lead-header">
+                        <div class="lead-summary-info">
+                            <div class="lead-title-group">
+                                <h3>${escapeHtml(lead.shopName)}</h3>
+                                <div class="lead-category">${escapeHtml(lead.category)} • ⭐ ${lead.rating || 'N/A'} (${lead.reviews || 0})</div>
+                            </div>
+                            <div class="lead-compact-meta">
+                                <span>📞 ${escapeHtml(lead.phone || 'N/A')}</span>
+                            </div>
+                        </div>
+
+                        <div class="actions-right">
+                            <span class="tag-badge ${badgeClass}">${escapeHtml(lead.siteStatus || 'Missing')}</span>
+                            <button class="btn-toggle-details" id="toggle_btn_${lead.id}" onclick="toggleLeadDetails('${lead.id}')">
+                                More Details ▾
+                            </button>
+                            <button class="btn-delete" onclick="deleteLead('${lead.id}')" title="Delete Lead">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Full Details -->
+                    <div class="lead-details" id="details_${lead.id}">
+                        <div class="lead-grid">
+                            <div class="info-item">
+                                <span class="info-label">Phone</span>
+                                <span class="info-value">${escapeHtml(lead.phone || 'Not Found')}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Email</span>
+                                <span class="info-value">${escapeHtml(lead.email || 'Not Found')}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Website</span>
+                                <span class="info-value">${lead.website && lead.website !== 'None' ? `<a href="${escapeHtml(lead.website)}" target="_blank" style="color:var(--primary)">${escapeHtml(lead.website)}</a>` : 'None'}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Tech Stack</span>
+                                <span class="info-value">${escapeHtml(lead.techStack || 'Unknown')}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Address</span>
+                                <span class="info-value">${escapeHtml(lead.address || 'Not Found')}</span>
+                            </div>
+                        </div>
+
+                        <!-- Audit Findings -->
+                        <div class="audit-box">
+                            <h4>Audit Findings & Recommended Offer</h4>
+                            <ul class="audit-issues">
+                                ${issues.map(iss => `<li>${escapeHtml(iss)}</li>`).join('')}
+                            </ul>
+                            <div class="services-pills">
+                                ${services.map(srv => `<span class="service-pill">${escapeHtml(srv)}</span>`).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Pitch Script -->
+                        <div class="pitch-box">
+                            <div class="pitch-header">
+                                <h4>Tailored Pitch Script</h4>
+                                <button class="btn-copy" onclick="copyPitch('${lead.id}')">Copy Script</button>
+                            </div>
+                            <div class="pitch-text" id="pitch_${lead.id}">${escapeHtml(lead.pitch || 'No pitch available.')}</div>
+                        </div>
+
+                        <div class="card-actions">
+                            <div class="action-btns">
+                                ${lead.phone && lead.phone !== 'Not Found' ? `<a href="https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(lead.pitch || '')}" target="_blank" class="btn-action btn-wa">WhatsApp</a>` : ''}
+                                ${lead.email && lead.email !== 'Not Found' ? `<a href="mailto:${lead.email}?subject=${encodeURIComponent('Quick question regarding ' + lead.shopName)}&body=${encodeURIComponent(lead.pitch || '')}" target="_blank" class="btn-action btn-mail">Email Pitch</a>` : ''}
+                            </div>
+                            <div>
+                                <select class="status-select" onchange="updateLeadStatus('${lead.id}', this.value)">
+                                    <option value="New" ${lead.status === 'New' ? 'selected' : ''}>Status: New</option>
+                                    <option value="Contacted" ${lead.status === 'Contacted' ? 'selected' : ''}>Status: Contacted</option>
+                                    <option value="In Progress" ${lead.status === 'In Progress' ? 'selected' : ''}>Status: In Progress</option>
+                                    <option value="Closed" ${lead.status === 'Closed' ? 'selected' : ''}>Status: Closed</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        async function updateLeadStatus(id, newStatus) {
+            try {
+                await fetch('/api/leads/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, status: newStatus })
+                });
+                const target = globalLeads.find(l => String(l.id) === String(id));
+                if (target) target.status = newStatus;
+                updateMetrics();
+            } catch (err) {
+                alert('Failed to update status.');
+            }
+        }
+
+        async function deleteLead(id) {
+            if (!confirm('Are you sure you want to delete this lead?')) return;
+
+            try {
+                const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    globalLeads = globalLeads.filter(l => String(l.id) !== String(id));
+                    updateMetrics();
+                    renderLeads();
+                } else {
+                    alert('Could not delete lead.');
+                }
+            } catch (err) {
+                alert('Error deleting lead.');
+            }
+        }
+
+        function copyPitch(id) {
+            const pitchEl = document.getElementById(`pitch_${id}`);
+            if (pitchEl) {
+                navigator.clipboard.writeText(pitchEl.innerText);
+                alert('Pitch script copied to clipboard!');
+            }
+        }
+
+        function startScrape() {
+            const businessType = document.getElementById('businessType').value.trim();
+            const location = document.getElementById('location').value.trim();
+            const isNearMe = document.getElementById('isNearMe').checked;
+            const maxResults = document.getElementById('maxResults').value;
+
+            if (!businessType || (!isNearMe && !location)) {
+                alert('Please enter a business type and location (or check "Near Me").');
+                return;
+            }
+
+            const btn = document.getElementById('btnScrape');
+            const pBox = document.getElementById('progressBox');
+            btn.disabled = true;
+            pBox.style.display = 'block';
+            pBox.innerText = 'Initializing...';
+
+            if (isNearMe && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        socket.emit('start-scrape', {
+                            businessType, location, maxResults, isNearMe: true,
+                            coords: { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+                        });
+                    },
+                    () => {
+                        socket.emit('start-scrape', { businessType, location, maxResults, isNearMe: false });
+                    }
+                );
+            } else {
+                socket.emit('start-scrape', { businessType, location, maxResults, isNearMe });
+            }
+        }
+
+        socket.on('progress', (msg) => {
+            const pBox = document.getElementById('progressBox');
+            pBox.innerText = msg;
+        });
+
+        socket.on('scrape-complete', (updatedLeads) => {
+            globalLeads = updatedLeads;
+            updateMetrics();
+            renderLeads();
+
+            document.getElementById('btnScrape').disabled = false;
+            document.getElementById('progressBox').innerText = 'Scrape completed successfully!';
+        });
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        loadLeads();
+    </script>
+</body>
+
+</html>

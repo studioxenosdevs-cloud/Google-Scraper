@@ -12,11 +12,25 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Ensure public directory exists for static asset serving
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (!fs.existsSync(PUBLIC_DIR)) {
+    fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+}
+
 const CSV_FILE = path.join(__dirname, 'leads.csv');
 
 app.use(express.json());
-// app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.static(__dirname));
+
+// Securely serve static files from /public directory only
+app.use(express.static(PUBLIC_DIR));
+
+const CSV_FIELDS = [
+    'id', 'shopName', 'category', 'phone', 'website',
+    'address', 'rating', 'reviews', 'siteStatus', 'status',
+    'ownerName', 'email', 'techStack', 'opportunity', 'services',
+    'issues', 'pitch', 'socials', 'mapsUrl', 'dateAdded'
+];
 
 function readCSV() {
     return new Promise((resolve, reject) => {
@@ -33,73 +47,129 @@ function readCSV() {
 }
 
 async function writeCSV(data) {
-    const fields = [
-        'id', 'shopName', 'category', 'phone', 'website',
-        'address', 'rating', 'reviews', 'siteStatus', 'status',
-        'ownerName', 'email', 'techStack', 'opportunity', 'mapsUrl', 'dateAdded'
-    ];
-    const json2csvParser = new Parser({ fields });
+    const json2csvParser = new Parser({ fields: CSV_FIELDS });
     const csv = json2csvParser.parse(data);
     await fs.promises.writeFile(CSV_FILE, csv, 'utf8');
 }
+
+// Thread-safe write queue to prevent CSV file corruption during concurrent operations
+let writeQueue = Promise.resolve();
+function queueWrite(task) {
+    const result = writeQueue.then(task);
+    writeQueue = result.catch(() => { });
+    return result;
+}
+
+function sortLeadsByLatest(leads) {
+    return [...leads].sort((a, b) => {
+        const dateA = new Date(a.dateAdded || 0);
+        const dateB = new Date(b.dateAdded || 0);
+        return dateB - dateA;
+    });
+}
+
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
+// GET /api/leads - reads directly from leads.csv
 app.get('/api/leads', async (req, res) => {
     try {
         const leads = await readCSV();
-        res.json(leads);
+        res.json(sortLeadsByLatest(leads));
     } catch (err) {
-        res.status(500).json({ error: 'Failed to read CSV data' });
+        console.error('Failed to read leads:', err);
+        res.status(500).json({ error: 'Failed to load leads' });
     }
 });
 
+// POST /api/leads/update - updates pipeline status for a single lead
 app.post('/api/leads/update', async (req, res) => {
     try {
         const { id, status } = req.body;
-        const leads = await readCSV();
-        const lead = leads.find(l => String(l.id) === String(id));
+        if (!id || !status) {
+            return res.status(400).json({ error: 'id and status are required' });
+        }
+
+        const lead = await queueWrite(async () => {
+            const leads = await readCSV();
+            const target = leads.find(l => String(l.id) === String(id));
+            if (target) {
+                target.status = status;
+                await writeCSV(leads);
+            }
+            return target;
+        });
+
         if (lead) {
-            lead.status = status;
-            await writeCSV(leads);
             res.json({ success: true, lead });
         } else {
             res.status(404).json({ error: 'Lead not found' });
         }
     } catch (err) {
+        console.error('Failed to update lead:', err);
         res.status(500).json({ error: 'Failed to update lead' });
+    }
+});
+
+// DELETE /api/leads/:id - deletes an individual lead by ID
+app.delete('/api/leads/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { found, remaining } = await queueWrite(async () => {
+            const leads = await readCSV();
+            const before = leads.length;
+            const remaining = leads.filter(l => String(l.id) !== String(id));
+            const found = remaining.length < before;
+            if (found) await writeCSV(remaining);
+            return { found, remaining };
+        });
+
+        if (found) {
+            res.json({ success: true, remainingCount: remaining.length });
+        } else {
+            res.status(404).json({ error: 'Lead not found' });
+        }
+    } catch (err) {
+        console.error('Failed to delete lead:', err);
+        res.status(500).json({ error: 'Failed to delete lead' });
     }
 });
 
 io.on('connection', (socket) => {
     socket.on('start-scrape', async (params) => {
-        const { businessType, location, maxResults, isNearMe } = params;
+        const { businessType, location, maxResults, isNearMe, coords } = params || {};
 
         const updateProgress = (msg) => {
             socket.emit('progress', msg);
         };
 
+        if (!businessType || (!isNearMe && !location)) {
+            socket.emit('progress', 'Error: missing business query or location.');
+            return;
+        }
+
         try {
-            updateProgress('Initializing Scraper...');
+            updateProgress('Initializing scraper...');
 
             const scrapedLeads = await scrapeGoogleMaps(
                 {
                     businessType,
                     location,
                     isNearMe,
-                    maxResults: parseInt(maxResults, 10) || 10
+                    maxResults: parseInt(maxResults, 10) || 10,
+                    coords
                 },
                 updateProgress
             );
 
             updateProgress('Saving scraped leads to CSV...');
 
-            const currentLeads = await readCSV();
-            const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+            const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
             const formattedNewLeads = scrapedLeads.map((item) => ({
-                id: `lead_${item.id}`,
+                id: item.id,
                 shopName: item.shopName || 'Business Listing',
                 category: item.category || businessType,
                 phone: item.phone || 'Not Found',
@@ -111,20 +181,27 @@ io.on('connection', (socket) => {
                 status: item.status || 'New',
                 ownerName: item.ownerName || 'Not Listed',
                 email: item.email || 'Not Found',
-                techStack: item.techStack || 'Custom / Standard Web',
+                techStack: item.techStack || 'Custom Web Engine',
                 opportunity: item.opportunity || 'Needs Web Presence',
+                services: item.services || '',
+                issues: item.issues || '',
+                pitch: item.pitch || '',
+                socials: item.socials || '',
                 mapsUrl: item.mapsUrl || 'https://maps.google.com',
                 dateAdded: now
             }));
 
-            const existingIds = new Set(currentLeads.map(l => String(l.id)));
-            const uniqueNewLeads = formattedNewLeads.filter(l => !existingIds.has(String(l.id)));
+            const updatedLeads = await queueWrite(async () => {
+                const currentLeads = await readCSV();
+                const existingIds = new Set(currentLeads.map(l => String(l.id)));
+                const uniqueNewLeads = formattedNewLeads.filter(l => !existingIds.has(String(l.id)));
+                const merged = [...uniqueNewLeads, ...currentLeads];
+                await writeCSV(merged);
+                return merged;
+            });
 
-            const updatedLeads = [...uniqueNewLeads, ...currentLeads];
-            await writeCSV(updatedLeads);
-
-            socket.emit('progress', `Done! Added ${uniqueNewLeads.length} leads.`);
-            socket.emit('scrape-complete', updatedLeads);
+            socket.emit('progress', `Done! Added ${formattedNewLeads.length} new lead(s).`);
+            socket.emit('scrape-complete', sortLeadsByLatest(updatedLeads));
 
         } catch (err) {
             console.error('Scraping Error:', err);
