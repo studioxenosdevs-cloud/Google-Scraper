@@ -57,6 +57,12 @@ async function scrapeGoogleMaps(options, updateProgress) {
 
         let scrollAttempts = 0;
         let stalledScrolls = 0;
+        // Tracks how many DOM cards we've attempted (clicked/extracted), independent
+        // of how many turned into valid leads. rawLeads.length can lag behind this
+        // when cards are duplicates/invalid — using rawLeads.length as the loop's
+        // progress marker caused those cards to be re-clicked forever without ever
+        // triggering a scroll.
+        let processedCount = 0;
 
         updateProgress(`Extracting business listings...`);
 
@@ -65,7 +71,9 @@ async function scrapeGoogleMaps(options, updateProgress) {
                 return document.querySelectorAll('div[role="feed"] > div > div[role="article"]').length;
             });
 
-            if (cardCount <= rawLeads.length) {
+            if (cardCount <= processedCount) {
+                updateProgress(`Scrolling feed for more listings (Attempt ${scrollAttempts + 1}/25)...`);
+
                 const heightBefore = await page.evaluate(() => {
                     const feed = document.querySelector('div[role="feed"]');
                     return feed ? feed.scrollHeight : 0;
@@ -75,7 +83,18 @@ async function scrapeGoogleMaps(options, updateProgress) {
                     const feed = document.querySelector('div[role="feed"]');
                     if (feed) feed.scrollBy(0, 1200);
                 });
-                await page.waitForTimeout(1500);
+
+                try {
+                    await page.waitForFunction(
+                        (prevCount) => {
+                            return document.querySelectorAll('div[role="feed"] > div > div[role="article"]').length > prevCount;
+                        },
+                        cardCount,
+                        { timeout: 1500, polling: 150 }
+                    );
+                } catch (e) {
+                    // Timeout hit; continue check below
+                }
                 scrollAttempts++;
 
                 const heightAfter = await page.evaluate(() => {
@@ -83,16 +102,25 @@ async function scrapeGoogleMaps(options, updateProgress) {
                     return feed ? feed.scrollHeight : 0;
                 });
 
-                stalledScrolls = heightAfter === heightBefore ? stalledScrolls + 1 : 0;
+                if (heightAfter === heightBefore) {
+                    stalledScrolls++;
+                    updateProgress(`Feed scroll stalled (${stalledScrolls}/4 consecutive no-scroll attempts).`);
+                } else {
+                    stalledScrolls = 0;
+                }
                 continue;
             }
 
             stalledScrolls = 0;
 
-            for (let i = rawLeads.length; i < cardCount; i++) {
+            for (let i = processedCount; i < cardCount; i++) {
                 if (rawLeads.length >= maxResults) break;
 
+                processedCount = i + 1;
+
                 try {
+                    updateProgress(`Opening business listing ${i + 1} of ${cardCount}...`);
+
                     const clicked = await page.evaluate((index) => {
                         const articles = document.querySelectorAll('div[role="feed"] > div > div[role="article"]');
                         const target = articles[index];
@@ -105,8 +133,31 @@ async function scrapeGoogleMaps(options, updateProgress) {
                         return false;
                     }, i);
 
-                    if (!clicked) continue;
-                    await page.waitForTimeout(1800);
+                    if (!clicked) {
+                        updateProgress(`Warning: Target listing card #${i + 1} was unclickable, skipping...`);
+                        continue;
+                    }
+
+                    try {
+                        await page.waitForFunction(
+                            () => {
+                                const h1s = Array.from(document.querySelectorAll('h1'));
+                                const panelH1 = h1s.find(h => h.innerText.trim() !== '' && h.innerText.trim().toLowerCase() !== 'results');
+                                if (!panelH1) return false;
+                                const hasCategory = !!document.querySelector('button[jsaction*="category"]');
+                                const hasAddress = !!document.querySelector('button[data-item-id="address"]');
+                                const hasWebsiteOrPhone = !!(
+                                    document.querySelector('a[data-item-id="authority"]') ||
+                                    document.querySelector('button[data-item-id*="phone:tel"]')
+                                );
+                                return hasCategory || hasAddress || hasWebsiteOrPhone;
+                            },
+                            { timeout: 1800, polling: 100 }
+                        );
+                        await page.waitForTimeout(250);
+                    } catch (e) {
+                        updateProgress(`Detail panel wait timed out for listing #${i + 1}, capturing current DOM view...`);
+                    }
 
                     const leadData = await page.evaluate((index) => {
                         const articles = document.querySelectorAll('div[role="feed"] > div > div[role="article"]');
@@ -154,14 +205,17 @@ async function scrapeGoogleMaps(options, updateProgress) {
                     }, i);
 
                     if (!leadData.shopName || leadData.shopName.toLowerCase() === 'results' || existingLeadNames.has(leadData.shopName)) {
+                        updateProgress(`Skipped item #${i + 1}: Duplicate or invalid name ("${leadData.shopName || 'Unknown'}").`);
                         continue;
                     }
 
                     existingLeadNames.add(leadData.shopName);
                     rawLeads.push(leadData);
+                    updateProgress(`Successfully added lead ${rawLeads.length}/${maxResults}: ${leadData.shopName}`);
 
                 } catch (err) {
                     console.error(`Skipped item ${i}:`, err.message);
+                    updateProgress(`Error on listing #${i + 1}: ${err.message}`);
                 }
             }
         }

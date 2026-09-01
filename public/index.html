@@ -212,6 +212,8 @@
 
         .search-action-row {
             margin-top: 14px;
+            display: flex;
+            gap: 10px;
         }
 
         button.btn-primary {
@@ -229,7 +231,7 @@
             justify-content: center;
             gap: 8px;
             height: 40px;
-            width: 100%;
+            flex: 1;
             box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
         }
 
@@ -246,17 +248,58 @@
             box-shadow: none;
         }
 
+        button.btn-secondary {
+            background: #F1F5F9;
+            color: var(--text-dark);
+            border: 1px solid var(--border-color);
+            padding: 0 16px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            height: 40px;
+            white-space: nowrap;
+        }
+
+        button.btn-secondary:hover {
+            background: #E2E8F0;
+        }
+
         .progress-box {
             margin-top: 12px;
             padding: 10px 14px;
-            background: #F1F5F9;
+            background: #1E293B;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-md);
             font-size: 12px;
-            color: #334155;
+            color: #4ADE80;
             display: none;
             font-family: 'ui-monospace', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            line-height: 1.4;
+            line-height: 1.5;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            border-bottom: 1px solid #334155;
+            padding-bottom: 4px;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+
+        .log-time {
+            color: #94A3B8;
+            font-size: 10px;
+            margin-right: 8px;
+        }
+
+        .log-error {
+            color: #F87171;
         }
 
         /* Metrics Grid */
@@ -806,6 +849,14 @@
                     </svg>
                     <span>Start Search</span>
                 </button>
+                <button class="btn-secondary" id="btnToggleLogs" onclick="toggleLogs()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
+                    <span id="logBtnText">View Logs</span>
+                </button>
             </div>
             <div class="progress-box" id="progressBox">Ready...</div>
         </div>
@@ -866,6 +917,18 @@
             const locInput = document.getElementById('location');
             locInput.disabled = isNearMe;
             if (isNearMe) locInput.value = '';
+        }
+
+        function toggleLogs() {
+            const pBox = document.getElementById('progressBox');
+            const btnText = document.getElementById('logBtnText');
+            if (pBox.style.display === 'none' || !pBox.style.display) {
+                pBox.style.display = 'block';
+                btnText.innerText = 'Hide Logs';
+            } else {
+                pBox.style.display = 'none';
+                btnText.innerText = 'View Logs';
+            }
         }
 
         async function loadLeads() {
@@ -940,7 +1003,6 @@
 
                 return `
                 <div class="lead-card" id="card_${lead.id}">
-                    <!-- Compact Bar Header -->
                     <div class="lead-header">
                         <div class="lead-summary-info">
                             <div class="lead-title-group">
@@ -969,7 +1031,6 @@
                         </div>
                     </div>
 
-                    <!-- Collapsible Full Details -->
                     <div class="lead-details" id="details_${lead.id}">
                         <div class="lead-grid">
                             <div class="info-item">
@@ -994,7 +1055,6 @@
                             </div>
                         </div>
 
-                        <!-- Audit Findings -->
                         <div class="audit-box">
                             <h4>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
@@ -1008,7 +1068,6 @@
                             </div>
                         </div>
 
-                        <!-- Pitch Script -->
                         <div class="pitch-box">
                             <div class="pitch-header">
                                 <h4>
@@ -1104,8 +1163,10 @@
             const btn = document.getElementById('btnScrape');
             const pBox = document.getElementById('progressBox');
             btn.disabled = true;
-            pBox.style.display = 'block';
-            pBox.innerText = 'Initializing scraper session...';
+
+            // Clear previous logs
+            pBox.innerHTML = '';
+            appendLog('Initializing scraper session...');
 
             if (isNearMe && navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -1124,9 +1185,23 @@
             }
         }
 
-        socket.on('progress', (msg) => {
+        function appendLog(msg) {
             const pBox = document.getElementById('progressBox');
-            pBox.innerText = msg;
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+
+            const isError = msg.toLowerCase().includes('error');
+            if (isError) logEntry.classList.add('log-error');
+
+            logEntry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(msg)}`;
+            pBox.appendChild(logEntry);
+
+            pBox.scrollTop = pBox.scrollHeight;
+        }
+
+        socket.on('progress', (msg) => {
+            appendLog(msg);
         });
 
         socket.on('scrape-complete', (updatedLeads) => {
@@ -1135,7 +1210,7 @@
             renderLeads();
 
             document.getElementById('btnScrape').disabled = false;
-            document.getElementById('progressBox').innerText = 'Scrape completed successfully!';
+            appendLog('Scrape completed successfully!');
         });
 
         function escapeHtml(str) {

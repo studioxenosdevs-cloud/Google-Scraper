@@ -18,8 +18,7 @@ if (!fs.existsSync(PUBLIC_DIR)) {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 }
 
-const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
-const CSV_FILE = path.join(dataDir, 'leads.csv');
+const CSV_FILE = path.join(__dirname, 'leads.csv');
 
 app.use(express.json());
 
@@ -143,6 +142,8 @@ io.on('connection', (socket) => {
         const { businessType, location, maxResults, isNearMe, coords } = params || {};
 
         const updateProgress = (msg) => {
+            const time = new Date().toLocaleTimeString();
+            console.log(`[${time}] [SCRAPER]: ${msg}`);
             socket.emit('progress', msg);
         };
 
