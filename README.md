@@ -1,3 +1,5 @@
+<img src="./Workflow"/>
+
 # Lead Finder & Sales Pipeline Dashboard
 
 An open-source, full-stack lead generation engine and sales pipeline management system. This application automates Google Maps business discovery, website availability and technology audits, outreach pitch synthesis, and lead lifecycle tracking within a unified dashboard interface.
