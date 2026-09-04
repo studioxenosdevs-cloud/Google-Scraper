@@ -49,7 +49,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
         });
 
         const page = await context.newPage();
-        // Explicitly set language to English to normalize Google Maps selectors in cloud envs
+        // Explicitly set language to English to normalize Google Maps selectors
         const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(searchQuery)}?hl=en`;
 
         updateProgress(`Navigating to Google Maps: "${searchQuery}"...`);
@@ -57,7 +57,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
         try {
             await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
 
-            // Handle Google Cookie Consent Banner (Triggers frequently on Railway/Datacenter IPs)
+            // Handle Google Cookie Consent Banner (Triggers on datacenter/cloud IPs)
             const consentSelector = 'form[action*="consent"] button, button[aria-label*="Accept all"], button[aria-label*="I agree"]';
             try {
                 const consentBtn = await page.waitForSelector(consentSelector, { timeout: 4000 });
@@ -142,7 +142,8 @@ async function scrapeGoogleMaps(options, updateProgress) {
                         const target = articles[index];
                         if (target) {
                             target.scrollIntoView({ behavior: 'instant', block: 'center' });
-                            const clickableLink = target.querySelector('a') || target;
+                            // Prioritize the direct place link to avoid clicking external ad buttons
+                            const clickableLink = target.querySelector('a[href*="/maps/place/"]') || target.querySelector('a') || target;
                             clickableLink.click();
                             return true;
                         }
@@ -158,7 +159,10 @@ async function scrapeGoogleMaps(options, updateProgress) {
                         await page.waitForFunction(
                             () => {
                                 const h1s = Array.from(document.querySelectorAll('h1'));
-                                const panelH1 = h1s.find(h => h.innerText.trim() !== '' && h.innerText.trim().toLowerCase() !== 'results');
+                                const panelH1 = h1s.find(h => {
+                                    const txt = h.innerText.trim().toLowerCase();
+                                    return txt !== '' && txt !== 'results' && !txt.startsWith('sponsored');
+                                });
                                 if (!panelH1) return false;
                                 const hasCategory = !!document.querySelector('button[jsaction*="category"]');
                                 const hasAddress = !!document.querySelector('button[data-item-id="address"]');
@@ -168,7 +172,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
                                 );
                                 return hasCategory || hasAddress || hasWebsiteOrPhone;
                             },
-                            { timeout: 2000, polling: 100 }
+                            { timeout: 2500, polling: 100 }
                         );
                         await page.waitForTimeout(250);
                     } catch (e) {
@@ -183,10 +187,34 @@ async function scrapeGoogleMaps(options, updateProgress) {
                         const feedPhoneMatch = cardText.match(/(\+?\d{2,4}[-.\s]?)?(\(?\d{3}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{4}/);
                         const feedPhone = feedPhoneMatch ? feedPhoneMatch[0].trim() : null;
 
-                        const panelH1 = Array.from(document.querySelectorAll('h1')).find(
-                            h1 => h1.innerText.trim().toLowerCase() !== 'results' && h1.innerText.trim() !== ''
-                        );
-                        const shopName = panelH1 ? panelH1.innerText.trim() : 'Unknown Business';
+                        // Title fallback from listing card inside feed
+                        const cardTitleNode = article ? (article.querySelector('.qBF1Pd') || article.querySelector('div.fontHeadlineSmall')) : null;
+                        const cardTitle = cardTitleNode ? cardTitleNode.innerText.trim() : '';
+
+                        // Title extraction from detail panel header
+                        const h1s = Array.from(document.querySelectorAll('h1'));
+                        let panelH1 = h1s.find(h => {
+                            const txt = h.innerText.trim().toLowerCase();
+                            return txt !== '' && txt !== 'results' && !txt.startsWith('sponsored');
+                        });
+                        if (!panelH1) {
+                            panelH1 = h1s.find(h => h.innerText.trim() !== '' && h.innerText.trim().toLowerCase() !== 'results');
+                        }
+
+                        let rawName = panelH1 ? panelH1.innerText : cardTitle;
+
+                        // Sanitize title: strip unicode icons (e.g. ), "Sponsored" labels, and newlines
+                        let shopName = rawName
+                            .replace(/[\uE000-\uF8FF]/g, '')
+                            .split('\n')
+                            .map(s => s.trim())
+                            .filter(s => s && !s.toLowerCase().includes('sponsored'))
+                            .join(' ')
+                            .trim();
+
+                        if (!shopName && cardTitle) {
+                            shopName = cardTitle;
+                        }
 
                         const categoryNode = document.querySelector('button[jsaction*="category"]');
                         const category = categoryNode ? categoryNode.innerText.trim() : 'Local Business';
@@ -221,7 +249,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
                     }, i);
 
                     const normName = leadData.shopName.toLowerCase().trim();
-                    if (!leadData.shopName || normName === 'results' || existingLeadNames.has(normName)) {
+                    if (!leadData.shopName || normName === 'results' || normName === 'sponsored' || existingLeadNames.has(normName)) {
                         updateProgress(`Skipped item #${i + 1}: Duplicate or invalid name ("${leadData.shopName || 'Unknown'}").`);
                         continue;
                     }
@@ -274,7 +302,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
  * load response speed, contact emails/phones, and technology stack.
  */
 async function auditWebsiteAndRecommendServices(url, fallbackPhone) {
-    if (!url || url === 'None' || url.includes('google.com/maps')) {
+    if (!url || url === 'None' || !url.startsWith('http')) {
         return {
             status: 'Missing Website',
             issues: ['No official website was found on Google Maps for this business.'],
