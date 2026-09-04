@@ -9,7 +9,6 @@ const cheerio = require('cheerio');
 async function scrapeGoogleMaps(options, updateProgress) {
     const { businessType, location, isNearMe, maxResults = 10, coords } = options;
 
-    // Scoped Set so deduplication is fresh per search run
     const existingLeadNames = new Set();
 
     let searchQuery = businessType;
@@ -25,7 +24,9 @@ async function scrapeGoogleMaps(options, updateProgress) {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled'
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--lang=en-US,en'
         ]
     });
 
@@ -37,19 +38,39 @@ async function scrapeGoogleMaps(options, updateProgress) {
 
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
             permissions: isNearMe ? ['geolocation'] : [],
             geolocation: isNearMe ? { latitude: userLat, longitude: userLng } : undefined,
-            viewport: { width: 1366, height: 768 }
+            viewport: { width: 1366, height: 768 },
+            extraHTTPHeaders: {
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
         });
 
         const page = await context.newPage();
-        const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(searchQuery)}`;
+        // Explicitly set language to English to normalize Google Maps selectors in cloud envs
+        const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(searchQuery)}?hl=en`;
 
         updateProgress(`Navigating to Google Maps: "${searchQuery}"...`);
 
         try {
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForSelector('div[role="feed"]', { timeout: 15000 });
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
+
+            // Handle Google Cookie Consent Banner (Triggers frequently on Railway/Datacenter IPs)
+            const consentSelector = 'form[action*="consent"] button, button[aria-label*="Accept all"], button[aria-label*="I agree"]';
+            try {
+                const consentBtn = await page.waitForSelector(consentSelector, { timeout: 4000 });
+                if (consentBtn) {
+                    updateProgress("Bypassing Google Consent banner...");
+                    await consentBtn.click();
+                    await page.waitForTimeout(1500);
+                }
+            } catch (e) {
+                // Consent modal not present, proceed normally
+            }
+
+            await page.waitForSelector('div[role="feed"]', { timeout: 20000 });
         } catch (e) {
             updateProgress("Error: Could not load Google Maps feed. Google may have blocked the automated request or no results were found.");
             return [];
@@ -57,11 +78,6 @@ async function scrapeGoogleMaps(options, updateProgress) {
 
         let scrollAttempts = 0;
         let stalledScrolls = 0;
-        // Tracks how many DOM cards we've attempted (clicked/extracted), independent
-        // of how many turned into valid leads. rawLeads.length can lag behind this
-        // when cards are duplicates/invalid — using rawLeads.length as the loop's
-        // progress marker caused those cards to be re-clicked forever without ever
-        // triggering a scroll.
         let processedCount = 0;
 
         updateProgress(`Extracting business listings...`);
@@ -152,7 +168,7 @@ async function scrapeGoogleMaps(options, updateProgress) {
                                 );
                                 return hasCategory || hasAddress || hasWebsiteOrPhone;
                             },
-                            { timeout: 1800, polling: 100 }
+                            { timeout: 2000, polling: 100 }
                         );
                         await page.waitForTimeout(250);
                     } catch (e) {
@@ -204,12 +220,13 @@ async function scrapeGoogleMaps(options, updateProgress) {
                         return { shopName, category, rating, reviews, ownerName: 'Not Listed', phone, website, address, mapsUrl: window.location.href };
                     }, i);
 
-                    if (!leadData.shopName || leadData.shopName.toLowerCase() === 'results' || existingLeadNames.has(leadData.shopName)) {
+                    const normName = leadData.shopName.toLowerCase().trim();
+                    if (!leadData.shopName || normName === 'results' || existingLeadNames.has(normName)) {
                         updateProgress(`Skipped item #${i + 1}: Duplicate or invalid name ("${leadData.shopName || 'Unknown'}").`);
                         continue;
                     }
 
-                    existingLeadNames.add(leadData.shopName);
+                    existingLeadNames.add(normName);
                     rawLeads.push(leadData);
                     updateProgress(`Successfully added lead ${rawLeads.length}/${maxResults}: ${leadData.shopName}`);
 
@@ -406,9 +423,6 @@ async function auditWebsiteAndRecommendServices(url, fallbackPhone) {
     }
 }
 
-/**
- * Builds a detailed, ready-to-send sales pitch based on audit results.
- */
 function buildPitch(lead, analysis) {
     const name = lead.shopName || 'Business Owner';
     const category = (lead.category || 'business').toLowerCase();

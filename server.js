@@ -12,7 +12,6 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Ensure public directory exists for static asset serving
 const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(PUBLIC_DIR)) {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
@@ -21,8 +20,6 @@ if (!fs.existsSync(PUBLIC_DIR)) {
 const CSV_FILE = path.join(__dirname, 'leads.csv');
 
 app.use(express.json());
-
-// Securely serve static files from /public directory only
 app.use(express.static(PUBLIC_DIR));
 
 const CSV_FIELDS = [
@@ -52,7 +49,6 @@ async function writeCSV(data) {
     await fs.promises.writeFile(CSV_FILE, csv, 'utf8');
 }
 
-// Thread-safe write queue to prevent CSV file corruption during concurrent operations
 let writeQueue = Promise.resolve();
 function queueWrite(task) {
     const result = writeQueue.then(task);
@@ -68,11 +64,20 @@ function sortLeadsByLatest(leads) {
     });
 }
 
+/**
+ * Creates a unique identity key for deduplication based on business properties
+ */
+function getLeadIdentityKey(lead) {
+    const name = (lead.shopName || '').toLowerCase().trim();
+    const phone = (lead.phone || '').replace(/[^0-9]/g, '');
+    const address = (lead.address || '').toLowerCase().trim();
+    return phone && phone !== 'notfound' ? `${name}_${phone}` : `${name}_${address}`;
+}
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-// GET /api/leads - reads directly from leads.csv
 app.get('/api/leads', async (req, res) => {
     try {
         const leads = await readCSV();
@@ -83,7 +88,6 @@ app.get('/api/leads', async (req, res) => {
     }
 });
 
-// POST /api/leads/update - updates pipeline status for a single lead
 app.post('/api/leads/update', async (req, res) => {
     try {
         const { id, status } = req.body;
@@ -112,7 +116,6 @@ app.post('/api/leads/update', async (req, res) => {
     }
 });
 
-// DELETE /api/leads/:id - deletes an individual lead by ID
 app.delete('/api/leads/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -193,17 +196,24 @@ io.on('connection', (socket) => {
                 dateAdded: now
             }));
 
-            const updatedLeads = await queueWrite(async () => {
+            const { addedCount, merged } = await queueWrite(async () => {
                 const currentLeads = await readCSV();
-                const existingIds = new Set(currentLeads.map(l => String(l.id)));
-                const uniqueNewLeads = formattedNewLeads.filter(l => !existingIds.has(String(l.id)));
+                const existingKeys = new Set(currentLeads.map(l => getLeadIdentityKey(l)));
+
+                const uniqueNewLeads = formattedNewLeads.filter(l => {
+                    const key = getLeadIdentityKey(l);
+                    if (existingKeys.has(key)) return false;
+                    existingKeys.add(key);
+                    return true;
+                });
+
                 const merged = [...uniqueNewLeads, ...currentLeads];
                 await writeCSV(merged);
-                return merged;
+                return { addedCount: uniqueNewLeads.length, merged };
             });
 
-            socket.emit('progress', `Done! Added ${formattedNewLeads.length} new lead(s).`);
-            socket.emit('scrape-complete', sortLeadsByLatest(updatedLeads));
+            socket.emit('progress', `Done! Added ${addedCount} new lead(s).`);
+            socket.emit('scrape-complete', sortLeadsByLatest(merged));
 
         } catch (err) {
             console.error('Scraping Error:', err);
@@ -212,5 +222,5 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
